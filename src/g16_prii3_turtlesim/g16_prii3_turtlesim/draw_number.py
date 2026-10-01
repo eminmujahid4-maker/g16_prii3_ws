@@ -2,17 +2,16 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_srvs.srv import Empty
+from turtlesim.srv import SetPen
 
 PASOS = [
     ("girar", 1.57),
     ("avanzar", 3),
-    ("girar", 3.14),
-    ("avanzar", 3),
-    ("girar", 1.57),
+    ("lapiz_arriba", 0),
+    ("girar", 4.71),
     ("avanzar", 1.5),
-    ("girar", 1.57),
-    ("avanzar", 3),
-    ("girar", 3.14),
+    ("girar", 4.71),
+    ("lapiz_abajo", 0),
     ("avanzar", 2),
     ("circulo", 6.28),
 ]
@@ -23,6 +22,7 @@ class DrawNumber(Node):
         super().__init__('draw_number')
         self.pub = self.create_publisher(Twist, '/turtle1/cmd_vel', 10)
         self.reset_client = self.create_client(Empty, '/reset')
+        self.pen_client = self.create_client(SetPen, '/turtle1/set_pen')
 
         self.create_service(Empty, 'stop_drawing', self.stop)
         self.create_service(Empty, 'resume_drawing', self.resume)
@@ -50,11 +50,29 @@ class DrawNumber(Node):
         self.pausado = False
         return response
 
+    def poner_lapiz(self, apagado):
+        req = SetPen.Request()
+        req.r = 179
+        req.g = 184
+        req.b = 255
+        req.width = 3
+        req.off = apagado
+        self.pen_client.call_async(req)
+
     def dibujar(self):
         if self.pausado or self.paso >= len(PASOS):
             return
 
         accion, cantidad = PASOS[self.paso]
+
+        if accion == "lapiz_arriba":
+            self.poner_lapiz(1)
+            self.paso += 1
+            return
+        if accion == "lapiz_abajo":
+            self.poner_lapiz(0)
+            self.paso += 1
+            return
 
         msg = Twist()
         if accion == "avanzar":
