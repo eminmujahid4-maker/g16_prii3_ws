@@ -4,16 +4,18 @@ from geometry_msgs.msg import Twist
 from std_srvs.srv import Empty
 from turtlesim.srv import SetPen
 
-PASOS = [
-    ("girar", 1.57),
-    ("avanzar", 3),
-    ("lapiz_arriba", 0),
-    ("girar", 4.71),
-    ("avanzar", 1.5),
-    ("girar", 4.71),
-    ("lapiz_abajo", 0),
-    ("avanzar", 2),
-    ("circulo", 6.28),
+def mov(lin, ang, seg, arriba=False):
+    return {"lin": lin, "ang": ang, "seg": seg, "arriba": arriba}
+
+
+MOVS = [
+    mov(0.0, 1.0, 1.57),
+    mov(1.0, 0.0, 3.0),
+    mov(0.0, 1.0, 4.71, True),
+    mov(1.0, 0.0, 1.5, True),
+    mov(0.0, 1.0, 4.71, True),
+    mov(1.0, 0.0, 2.0),
+    mov(1.0, 1.0, 6.28),
 ]
 
 
@@ -21,8 +23,8 @@ class DrawNumber(Node):
     def __init__(self):
         super().__init__('draw_number')
         self.pub = self.create_publisher(Twist, '/turtle1/cmd_vel', 10)
-        self.reset_client = self.create_client(Empty, '/reset')
-        self.pen_client = self.create_client(SetPen, '/turtle1/set_pen')
+        self.reset_cli = self.create_client(Empty, '/reset')
+        self.pen_cli = self.create_client(SetPen, '/turtle1/set_pen')
 
         self.create_service(Empty, 'stop_drawing', self.stop)
         self.create_service(Empty, 'resume_drawing', self.resume)
@@ -30,62 +32,56 @@ class DrawNumber(Node):
 
         self.paso = 0
         self.tiempo = 0.0
-        self.pausado = False
+        self.pausa = False
+        self.arriba = False
         self.create_timer(0.05, self.dibujar)
 
     def stop(self, request, response):
-        self.pausado = True
+        self.pausa = True
         self.pub.publish(Twist())
         return response
 
     def resume(self, request, response):
-        self.pausado = False
+        self.pausa = False
         return response
 
     def restart(self, request, response):
         self.pub.publish(Twist())
-        self.reset_client.call_async(Empty.Request())
+        self.reset_cli.call_async(Empty.Request())
         self.paso = 0
         self.tiempo = 0.0
-        self.pausado = False
+        self.pausa = False
+        self.arriba = False
         return response
 
-    def poner_lapiz(self, apagado):
+    def lapiz(self, arriba):
+        if arriba == self.arriba:
+            return
         req = SetPen.Request()
-        req.r = 179
-        req.g = 184
+        req.r = 255
+        req.g = 255
         req.b = 255
         req.width = 3
-        req.off = apagado
-        self.pen_client.call_async(req)
+        req.off = 1 if arriba else 0
+        self.pen_cli.call_async(req)
+        self.arriba = arriba
 
     def dibujar(self):
-        if self.pausado or self.paso >= len(PASOS):
+        if self.pub.get_subscription_count() == 0:
+            return
+        if self.pausa or self.paso >= len(MOVS):
             return
 
-        accion, cantidad = PASOS[self.paso]
-
-        if accion == "lapiz_arriba":
-            self.poner_lapiz(1)
-            self.paso += 1
-            return
-        if accion == "lapiz_abajo":
-            self.poner_lapiz(0)
-            self.paso += 1
-            return
+        actual = MOVS[self.paso]
+        self.lapiz(actual["arriba"])
 
         msg = Twist()
-        if accion == "avanzar":
-            msg.linear.x = 1.0
-        elif accion == "girar":
-            msg.angular.z = 1.0
-        elif accion == "circulo":
-            msg.linear.x = 1.0
-            msg.angular.z = 1.0
+        msg.linear.x = actual["lin"]
+        msg.angular.z = actual["ang"]
         self.pub.publish(msg)
 
         self.tiempo += 0.05
-        if self.tiempo >= cantidad:
+        if self.tiempo >= actual["seg"]:
             self.pub.publish(Twist())
             self.paso += 1
             self.tiempo = 0.0
